@@ -1,0 +1,14 @@
+# dbt
+target/
+dbt_packages/
+logs/
+
+# Python
+venv/
+__pycache__/
+*.pyc
+.env
+
+# Credentials — never commit these
+*.json
+application_default_credentials.json

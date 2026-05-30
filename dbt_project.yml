@@ -1,0 +1,55 @@
+name: letamart_dbt
+version: "1.0.0"
+config-version: 2
+
+profile: letamart_dbt
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+analysis-paths: ["analyses"]
+snapshot-paths: ["snapshots"]
+
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+vars:
+  letamart_start_date: "2023-01-01"
+  slack_alert_channel: "#data-alerts"
+
+models:
+  letamart_dbt:
+
+    staging:
+      +materialized: view
+      +schema: staging
+      +tags: ["staging"]
+
+    intermediate:
+      +materialized: ephemeral
+      +tags: ["intermediate"]
+
+    analytics:
+      +materialized: table
+      +schema: analytics
+      +tags: ["analytics"]
+
+      facts:
+        +materialized: incremental
+        +incremental_strategy: merge
+        +unique_key: surrogate_key
+        +tags: ["facts", "incremental"]
+
+      dimensions:
+        +materialized: table
+        +tags: ["dimensions"]
+
+      reporting:
+        +materialized: table
+        +tags: ["reporting"]
+
+seeds:
+  letamart_dbt:
+    +schema: seeds
+    +quote_columns: false

@@ -5,6 +5,7 @@ attrs==26.1.0
 babel==2.18.0
 certifi==2026.5.20
 cffi==2.0.0
+cfgv==3.5.0
 chardet==7.4.3
 charset-normalizer==3.4.7
 click==8.3.3
@@ -21,9 +22,11 @@ dbt-protos==1.0.514
 dbt-semantic-interfaces==0.9.0
 deepdiff==8.6.2
 diff_cover==10.3.0
+distlib==0.4.0
 distro==1.9.0
 docstring_parser==0.18.0
 fastjsonschema==2.21.2
+filelock==3.29.0
 google-api-core==2.30.3
 google-auth==2.53.0
 google-auth-oauthlib==1.4.0
@@ -43,6 +46,7 @@ grpcio-status==1.80.0
 h11==0.16.0
 httpcore==1.0.9
 httpx==0.28.1
+identify==2.6.19
 idna==3.17
 importlib_metadata==8.9.0
 isodate==0.7.2
@@ -58,6 +62,7 @@ more-itertools==10.8.0
 msgpack==1.1.2
 nbformat==5.10.4
 networkx==3.6.1
+nodeenv==1.10.0
 numpy==2.4.6
 oauthlib==3.3.1
 orderly-set==5.5.0
@@ -68,6 +73,7 @@ parsedatetime==2.6
 pathspec==0.12.1
 platformdirs==4.10.0
 pluggy==1.6.0
+pre_commit==4.6.0
 proto-plus==1.28.0
 protobuf==6.33.6
 psutil==7.2.2
@@ -80,6 +86,7 @@ pydantic_core==2.46.4
 pydata-google-auth==1.9.1
 Pygments==2.20.0
 python-dateutil==2.9.0.post0
+python-discovery==1.4.0
 python-slugify==8.0.4
 pytimeparse==1.1.8
 pytz==2026.2
@@ -105,5 +112,6 @@ typing-inspection==0.4.2
 typing_extensions==4.15.0
 tzdata==2026.2
 urllib3==2.7.0
+virtualenv==21.4.1
 websockets==16.0
 zipp==4.1.0

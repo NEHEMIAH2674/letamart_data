@@ -12,3 +12,4 @@ __pycache__/
 # Credentials — never commit these
 *.json
 application_default_credentials.json
+dbt_internal_packages/

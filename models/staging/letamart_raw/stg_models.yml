@@ -1,0 +1,117 @@
+version: 2
+
+models:
+  - name: stg_orders
+    description: "{{ doc('stg_orders') }}"
+    columns:
+      - name: order_id
+        description: "{{ doc('order_id') }}"
+        tests: [unique, not_null]
+      - name: customer_id
+        description: "{{ doc('customer_id') }}"
+        tests: [not_null]
+      - name: order_status
+        description: "{{ doc('order_status') }}"
+        tests:
+          - accepted_values:
+              values: ["pending","confirmed","picking","dispatched","delivered","cancelled","returned"]
+      - name: order_channel
+        description: "{{ doc('order_channel') }}"
+        tests:
+          - accepted_values:
+              values: ["web","app","partner"]
+      - name: refreshed_at
+        description: "{{ doc('refreshed_at') }}"
+        tests: [not_null]
+
+  - name: stg_order_items
+    description: "{{ doc('stg_order_items') }}"
+    columns:
+      - name: order_item_id
+        description: "{{ doc('order_id') }}"
+        tests: [unique, not_null]
+      - name: order_id
+        description: "{{ doc('order_id') }}"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_orders')
+              field: order_id
+      - name: product_id
+        description: "{{ doc('product_id') }}"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_products')
+              field: product_id
+      - name: quantity
+        tests: [not_null]
+      - name: line_total_gbp
+        description: "{{ doc('line_total_gbp') }}"
+      - name: is_substituted
+        description: "{{ doc('is_substituted') }}"
+      - name: refreshed_at
+        description: "{{ doc('refreshed_at') }}"
+
+  - name: stg_products
+    description: "{{ doc('stg_products') }}"
+    columns:
+      - name: product_id
+        description: "{{ doc('product_id') }}"
+        tests: [unique, not_null]
+      - name: sku
+        tests: [unique, not_null]
+      - name: is_active
+        description: "{{ doc('is_active') }}"
+      - name: refreshed_at
+        description: "{{ doc('refreshed_at') }}"
+
+  - name: stg_customers
+    description: "{{ doc('stg_customers') }}"
+    columns:
+      - name: customer_id
+        description: "{{ doc('customer_id') }}"
+        tests: [unique, not_null]
+      - name: email
+        tests: [unique, not_null]
+      - name: loyalty_tier
+        description: "{{ doc('loyalty_tier') }}"
+        tests:
+          - accepted_values:
+              values: ["bronze","silver","gold","platinum"]
+      - name: is_active
+        description: "{{ doc('is_active') }}"
+      - name: refreshed_at
+        description: "{{ doc('refreshed_at') }}"
+
+  - name: stg_inventory
+    description: "{{ doc('stg_inventory') }}"
+    columns:
+      - name: inventory_id
+        tests: [unique, not_null]
+      - name: product_id
+        description: "{{ doc('product_id') }}"
+        tests: [not_null]
+      - name: units_available
+        description: "{{ doc('units_available') }}"
+      - name: is_below_reorder_point
+        description: "{{ doc('is_below_reorder_point') }}"
+      - name: refreshed_at
+        description: "{{ doc('refreshed_at') }}"
+
+  - name: stg_promotions
+    description: "{{ doc('stg_promotions') }}"
+    columns:
+      - name: promo_id
+        tests: [unique, not_null]
+      - name: promo_code
+        description: "{{ doc('promo_code') }}"
+        tests: [unique, not_null]
+      - name: promo_type
+        tests:
+          - accepted_values:
+              values: ["pct_discount","fixed_discount","bogo","free_delivery"]
+      - name: is_currently_valid
+        description: "{{ doc('is_currently_valid') }}"
+      - name: refreshed_at
+        description: "{{ doc('refreshed_at') }}"

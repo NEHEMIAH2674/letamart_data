@@ -1,0 +1,82 @@
+version: 2
+
+sources:
+  - name: raw
+    database: npd-01
+    schema: letamart_raw
+    description: "Raw supermarket data generated and loaded daily"
+    freshness:
+      warn_after: {count: 25, period: hour}
+      error_after: {count: 48, period: hour}
+    loaded_at_field: _loaded_at
+
+    tables:
+      - name: orders
+        description: "One row per customer order"
+        columns:
+          - name: order_id
+            tests: [unique, not_null]
+          - name: customer_id
+            tests: [not_null]
+          - name: status
+            tests:
+              - accepted_values:
+                  values: ["pending","confirmed","picking","dispatched","delivered","cancelled","returned"]
+          - name: created_at
+            tests: [not_null]
+          - name: channel
+            tests:
+              - accepted_values:
+                  values: ["web","app","partner"]
+
+      - name: order_items
+        description: "Line items within each order"
+        columns:
+          - name: order_item_id
+            tests: [unique, not_null]
+          - name: order_id
+            tests: [not_null]
+          - name: product_id
+            tests: [not_null]
+          - name: quantity
+            tests: [not_null]
+
+      - name: products
+        description: "Product catalogue"
+        columns:
+          - name: product_id
+            tests: [unique, not_null]
+          - name: sku
+            tests: [unique, not_null]
+
+      - name: customers
+        description: "Customer master"
+        columns:
+          - name: customer_id
+            tests: [unique, not_null]
+          - name: email
+            tests: [unique, not_null]
+          - name: loyalty_tier
+            tests:
+              - accepted_values:
+                  values: ["bronze","silver","gold","platinum"]
+
+      - name: inventory
+        description: "Daily stock snapshot per product per warehouse"
+        columns:
+          - name: inventory_id
+            tests: [unique, not_null]
+          - name: product_id
+            tests: [not_null]
+
+      - name: promotions
+        description: "Promotional campaigns"
+        columns:
+          - name: promo_id
+            tests: [unique, not_null]
+          - name: promo_code
+            tests: [unique, not_null]
+          - name: promo_type
+            tests:
+              - accepted_values:
+                  values: ["pct_discount","fixed_discount","bogo","free_delivery"]

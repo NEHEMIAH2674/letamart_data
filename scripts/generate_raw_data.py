@@ -2,31 +2,40 @@
 scripts/generate_raw_data.py
 -----------------------------
 Generates realistic online supermarket data and loads it into BigQuery.
+Reads config from .env file — no hardcoded credentials.
+
 Creates dataset: letamart_raw with 6 tables:
-  - orders
-  - order_items
-  - products
-  - customers
-  - inventory
-  - promotions
+  - orders, order_items, products, customers, inventory, promotions
 
 Usage:
     python scripts/generate_raw_data.py
 
-Requirements:
-    pip install google-cloud-bigquery faker pandas
+.env requirements:
+    GCP_PROJECT_ID=npd-01
+    GCP_DATASET_ID=letamart_raw
+    GCP_LOCATION=EU
+    SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
 """
 
+import os
+import json
 import random
+import urllib.request
+import urllib.error
 from datetime import datetime, timedelta, timezone
+
 import pandas as pd
 from faker import Faker
 from google.cloud import bigquery
+from dotenv import load_dotenv
 
-# ── Config ────────────────────────────────────────────────────
-PROJECT_ID   = "npd-01"
-DATASET_ID   = "letamart_raw"
-LOCATION     = "EU"
+# ── Load environment variables ────────────────────────────────
+load_dotenv()
+
+PROJECT_ID  = os.environ["GCP_PROJECT_ID"]
+DATASET_ID  = os.environ["GCP_DATASET_ID"]
+LOCATION    = os.getenv("GCP_LOCATION", "EU")
+WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL", "")
 
 NUM_CUSTOMERS  = 500
 NUM_PRODUCTS   = 200
@@ -39,6 +48,80 @@ Faker.seed(42)
 
 client = bigquery.Client(project=PROJECT_ID)
 
+run_start  = datetime.now(timezone.utc)
+load_stats = {}   # tracks rows loaded per table
+
+
+# ── Slack ─────────────────────────────────────────────────────
+def send_slack(message: str, success: bool = True):
+    if not WEBHOOK_URL:
+        print("⚠️  SLACK_WEBHOOK_URL not set — skipping alert")
+        return
+
+    colour = "#2eb886" if success else "#e01e5a"
+    icon   = "✅" if success else "🚨"
+
+    payload = {
+        "attachments": [
+            {
+                "color": colour,
+                "blocks": [
+                    {
+                        "type": "header",
+                        "text": {
+                            "type": "plain_text",
+                            "text": f"{icon} letamart — raw data load"
+                        }
+                    },
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": message
+                        }
+                    },
+                    {
+                        "type": "context",
+                        "elements": [
+                            {
+                                "type": "mrkdwn",
+                                "text": f"Project: `{PROJECT_ID}` | Dataset: `{DATASET_ID}` | {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}"
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+
+    try:
+        data = json.dumps(payload).encode("utf-8")
+        req  = urllib.request.Request(
+            WEBHOOK_URL,
+            data=data,
+            headers={"Content-Type": "application/json"}
+        )
+        urllib.request.urlopen(req, timeout=10)
+        print("📨 Slack alert sent")
+    except urllib.error.URLError as e:
+        print(f"⚠️  Slack alert failed: {e}")
+
+
+def send_success_alert():
+    elapsed = round((datetime.now(timezone.utc) - run_start).total_seconds(), 1)
+    lines   = [f"*Daily raw data load completed in {elapsed}s*\n"]
+    total   = 0
+    for table, rows in load_stats.items():
+        lines.append(f"• `{table}`: {rows:,} rows")
+        total += rows
+    lines.append(f"\n*Total rows loaded: {total:,}*")
+    send_slack("\n".join(lines), success=True)
+
+
+def send_failure_alert(error: Exception):
+    message = f"*Daily raw data load FAILED*\n\n```{str(error)}```"
+    send_slack(message, success=False)
+
 
 # ── Helpers ───────────────────────────────────────────────────
 def random_date(start: datetime, end: datetime) -> datetime:
@@ -47,10 +130,10 @@ def random_date(start: datetime, end: datetime) -> datetime:
 
 
 def create_dataset():
-    dataset_ref = bigquery.Dataset(f"{PROJECT_ID}.{DATASET_ID}")
+    dataset_ref          = bigquery.Dataset(f"{PROJECT_ID}.{DATASET_ID}")
     dataset_ref.location = LOCATION
-    dataset = client.create_dataset(dataset_ref, exists_ok=True)
-    print(f"✅ Dataset ready: {dataset.full_dataset_id}")
+    client.create_dataset(dataset_ref, exists_ok=True)
+    print(f"✅ Dataset ready: {PROJECT_ID}.{DATASET_ID}")
 
 
 def load_table(df: pd.DataFrame, table_id: str):
@@ -61,11 +144,11 @@ def load_table(df: pd.DataFrame, table_id: str):
     )
     job = client.load_table_from_dataframe(df, full_table, job_config=job_config)
     job.result()
+    load_stats[table_id] = len(df)
     print(f"✅ Loaded {len(df):,} rows → {full_table}")
 
 
 # ── Generators ────────────────────────────────────────────────
-
 def generate_products() -> pd.DataFrame:
     categories = {
         "fresh_produce":  ["apples", "bananas", "carrots", "broccoli", "spinach",
@@ -107,8 +190,8 @@ def generate_products() -> pd.DataFrame:
     for category, items in categories.items():
         for item in items:
             is_alcohol = category == "alcohol"
-            cost  = round(random.uniform(0.30, 12.00), 2)
-            rrp   = round(cost * random.uniform(1.3, 2.5), 2)
+            cost       = round(random.uniform(0.30, 12.00), 2)
+            rrp        = round(cost * random.uniform(1.3, 2.5), 2)
             rows.append({
                 "product_id":        f"PRD-{product_id:04d}",
                 "sku":               f"SKU-{product_id:06d}",
@@ -131,9 +214,9 @@ def generate_products() -> pd.DataFrame:
 def generate_customers() -> pd.DataFrame:
     tiers    = ["bronze", "silver", "gold", "platinum"]
     tier_wts = [0.5, 0.3, 0.15, 0.05]
-    rows = []
-    start = datetime(2020, 1, 1, tzinfo=timezone.utc)
-    end   = datetime(2024, 12, 31, tzinfo=timezone.utc)
+    rows     = []
+    start    = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    end      = datetime(2024, 12, 31, tzinfo=timezone.utc)
 
     for i in range(1, NUM_CUSTOMERS + 1):
         rows.append({
@@ -153,8 +236,8 @@ def generate_customers() -> pd.DataFrame:
 
 def generate_promotions() -> pd.DataFrame:
     promo_types = ["pct_discount", "fixed_discount", "bogo", "free_delivery"]
-    rows = []
-    start = datetime(2023, 1, 1, tzinfo=timezone.utc)
+    rows        = []
+    start       = datetime(2023, 1, 1, tzinfo=timezone.utc)
 
     for i in range(1, NUM_PROMOTIONS + 1):
         p_type     = random.choice(promo_types)
@@ -183,14 +266,14 @@ def generate_orders(customers: pd.DataFrame, promotions: pd.DataFrame) -> pd.Dat
     customer_ids = customers["customer_id"].tolist()
     promo_codes  = promotions["promo_code"].tolist() + [None] * 5
 
-    rows = []
+    rows  = []
     start = datetime(2023, 1, 1, tzinfo=timezone.utc)
     end   = datetime(2024, 12, 31, tzinfo=timezone.utc)
 
     for i in range(1, NUM_ORDERS + 1):
-        created_at   = random_date(start, end)
-        slot_start   = created_at + timedelta(hours=random.randint(2, 48))
-        slot_end     = slot_start + timedelta(hours=2)
+        created_at = random_date(start, end)
+        slot_start = created_at + timedelta(hours=random.randint(2, 48))
+        slot_end   = slot_start + timedelta(hours=2)
         rows.append({
             "order_id":            f"ORD-{i:06d}",
             "customer_id":         random.choice(customer_ids),
@@ -208,20 +291,20 @@ def generate_orders(customers: pd.DataFrame, promotions: pd.DataFrame) -> pd.Dat
 
 def generate_order_items(orders: pd.DataFrame, products: pd.DataFrame) -> pd.DataFrame:
     product_ids = products["product_id"].tolist()
-    rows = []
-    item_id = 1
+    rows        = []
+    item_id     = 1
 
     for _, order in orders.iterrows():
         num_items = random.randint(1, 12)
         chosen    = random.sample(product_ids, min(num_items, len(product_ids)))
 
         for product_id in chosen:
-            product      = products[products["product_id"] == product_id].iloc[0]
-            quantity     = random.randint(1, 5)
-            unit_price   = round(product["rrp_gbp"] * random.uniform(0.85, 1.05), 2)
-            discount     = round(unit_price * random.uniform(0, 0.2), 2) if random.random() > 0.7 else 0
-            is_sub       = random.random() > 0.95
-            sub_product  = random.choice(product_ids) if is_sub else None
+            product    = products[products["product_id"] == product_id].iloc[0]
+            quantity   = random.randint(1, 5)
+            unit_price = round(product["rrp_gbp"] * random.uniform(0.85, 1.05), 2)
+            discount   = round(unit_price * random.uniform(0, 0.2), 2) if random.random() > 0.7 else 0
+            is_sub     = random.random() > 0.95
+            sub_prod   = random.choice(product_ids) if is_sub else None
 
             rows.append({
                 "order_item_id":          f"ITEM-{item_id:08d}",
@@ -230,7 +313,7 @@ def generate_order_items(orders: pd.DataFrame, products: pd.DataFrame) -> pd.Dat
                 "quantity":               quantity,
                 "unit_price_gbp":         unit_price,
                 "discount_amount_gbp":    discount,
-                "substituted_product_id": sub_product,
+                "substituted_product_id": sub_prod,
             })
             item_id += 1
 
@@ -239,26 +322,26 @@ def generate_order_items(orders: pd.DataFrame, products: pd.DataFrame) -> pd.Dat
 
 def generate_inventory(products: pd.DataFrame) -> pd.DataFrame:
     warehouses = ["WH-LONDON-01", "WH-MANC-01", "WH-BHAM-01", "WH-LEEDS-01"]
-    rows = []
-    inv_id = 1
-    today  = datetime.now(timezone.utc).date()
+    rows       = []
+    inv_id     = 1
+    today      = datetime.now(timezone.utc).date()
 
     for _, product in products.iterrows():
         for warehouse in warehouses:
-            on_hand   = random.randint(0, 500)
-            reserved  = random.randint(0, min(50, on_hand))
+            on_hand    = random.randint(0, 500)
+            reserved   = random.randint(0, min(50, on_hand))
             in_transit = random.randint(0, 100)
-            reorder   = random.randint(20, 80)
+            reorder    = random.randint(20, 80)
             rows.append({
-                "inventory_id":    f"INV-{inv_id:07d}",
-                "product_id":      product["product_id"],
-                "warehouse_id":    warehouse,
-                "snapshot_date":   today.isoformat(),
-                "units_on_hand":   on_hand,
-                "units_reserved":  reserved,
+                "inventory_id":     f"INV-{inv_id:07d}",
+                "product_id":       product["product_id"],
+                "warehouse_id":     warehouse,
+                "snapshot_date":    today.isoformat(),
+                "units_on_hand":    on_hand,
+                "units_reserved":   reserved,
                 "units_in_transit": in_transit,
-                "reorder_point":   reorder,
-                "_loaded_at":      datetime.now(timezone.utc).isoformat(),
+                "reorder_point":    reorder,
+                "_loaded_at":       datetime.now(timezone.utc).isoformat(),
             })
             inv_id += 1
 
@@ -269,34 +352,41 @@ def generate_inventory(products: pd.DataFrame) -> pd.DataFrame:
 if __name__ == "__main__":
     print("\n🛒 letamart — raw data generator")
     print("=" * 40)
-
-    create_dataset()
-
-    print("\n📦 Generating products...")
-    products = generate_products()
-    load_table(products, "products")
-
-    print("\n👥 Generating customers...")
-    customers = generate_customers()
-    load_table(customers, "customers")
-
-    print("\n🎟️  Generating promotions...")
-    promotions = generate_promotions()
-    load_table(promotions, "promotions")
-
-    print("\n🛍️  Generating orders...")
-    orders = generate_orders(customers, promotions)
-    load_table(orders, "orders")
-
-    print("\n📋 Generating order items...")
-    order_items = generate_order_items(orders, products)
-    load_table(order_items, "order_items")
-
-    print("\n🏭 Generating inventory...")
-    inventory = generate_inventory(products)
-    load_table(inventory, "inventory")
-
-    print("\n✅ All done! letamart_raw is ready in BigQuery.")
     print(f"   Project : {PROJECT_ID}")
     print(f"   Dataset : {DATASET_ID}")
-    print(f"   Tables  : products, customers, promotions, orders, order_items, inventory")
+    print(f"   Location: {LOCATION}\n")
+
+    try:
+        create_dataset()
+
+        print("\n📦 Generating products...")
+        products = generate_products()
+        load_table(products, "products")
+
+        print("\n👥 Generating customers...")
+        customers = generate_customers()
+        load_table(customers, "customers")
+
+        print("\n🎟️  Generating promotions...")
+        promotions = generate_promotions()
+        load_table(promotions, "promotions")
+
+        print("\n🛍️  Generating orders...")
+        orders = generate_orders(customers, promotions)
+        load_table(orders, "orders")
+
+        print("\n📋 Generating order items...")
+        order_items = generate_order_items(orders, products)
+        load_table(order_items, "order_items")
+
+        print("\n🏭 Generating inventory...")
+        inventory = generate_inventory(products)
+        load_table(inventory, "inventory")
+
+        print("\n✅ All done! letamart_raw is ready in BigQuery.")
+        send_success_alert()
+
+    except Exception as e:
+        print(f"\n🚨 Error: {e}")
+        send_failure_alert(e)
+        raise

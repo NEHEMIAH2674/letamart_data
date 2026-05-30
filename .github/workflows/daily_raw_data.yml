@@ -1,0 +1,43 @@
+name: daily raw data load
+
+on:
+  schedule:
+    - cron: "0 12 * * *"   # every day at 12:00 UTC
+  workflow_dispatch:         # manual trigger from Actions UI
+
+jobs:
+  generate-raw-data:
+    name: Generate and load raw data to BigQuery
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run data generator
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_DATASET_ID: ${{ secrets.GCP_DATASET_ID }}
+          GCP_LOCATION:   ${{ secrets.GCP_LOCATION }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python scripts/generate_raw_data.py

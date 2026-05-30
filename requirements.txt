@@ -25,6 +25,7 @@ diff_cover==10.3.0
 distlib==0.4.0
 distro==1.9.0
 docstring_parser==0.18.0
+Faker==40.19.1
 fastjsonschema==2.21.2
 filelock==3.29.0
 google-api-core==2.30.3
@@ -87,6 +88,7 @@ pydata-google-auth==1.9.1
 Pygments==2.20.0
 python-dateutil==2.9.0.post0
 python-discovery==1.4.0
+python-dotenv==1.2.2
 python-slugify==8.0.4
 pytimeparse==1.1.8
 pytz==2026.2

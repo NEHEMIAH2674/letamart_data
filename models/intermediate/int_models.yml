@@ -1,0 +1,70 @@
+version: 2
+
+models:
+  - name: int_orders__basket_metrics
+    description: "{{ doc('int_orders__basket_metrics') }}"
+    columns:
+      - name: order_id
+        description: "{{ doc('order_id') }}"
+        tests: [not_null, unique]
+      - name: customer_id
+        description: "{{ doc('customer_id') }}"
+        tests: [not_null]
+      - name: basket_value_gbp
+        description: "{{ doc('basket_value_gbp') }}"
+      - name: total_discount_gbp
+        description: "{{ doc('total_discount_gbp') }}"
+      - name: item_line_count
+        description: "{{ doc('item_line_count') }}"
+      - name: total_units
+        description: "{{ doc('total_units') }}"
+      - name: substituted_line_count
+        description: "{{ doc('substituted_line_count') }}"
+      - name: has_promo
+        description: "{{ doc('has_promo') }}"
+      - name: is_delivered
+        description: "{{ doc('is_delivered') }}"
+      - name: is_cancelled
+        description: "{{ doc('is_cancelled') }}"
+      - name: is_returned
+        description: "{{ doc('is_returned') }}"
+      - name: order_date
+        description: "{{ doc('order_date') }}"
+        tests: [not_null]
+
+  - name: int_customers__order_metrics
+    description: "{{ doc('int_customers__order_metrics') }}"
+    columns:
+      - name: customer_id
+        description: "{{ doc('customer_id') }}"
+        tests: [not_null, unique]
+      - name: lifetime_value_gbp
+        description: "{{ doc('lifetime_value_gbp') }}"
+      - name: avg_order_value_gbp
+        description: "{{ doc('avg_order_value_gbp') }}"
+      - name: days_since_last_order
+        description: "{{ doc('days_since_last_order') }}"
+      - name: customer_segment
+        description: "{{ doc('customer_segment') }}"
+        tests:
+          - accepted_values:
+              values: ["active","at_risk","lapsing","churned","never_ordered"]
+      - name: has_ordered
+        description: "{{ doc('has_ordered') }}"
+
+  - name: int_products__performance_metrics
+    description: "{{ doc('int_products__performance_metrics') }}"
+    columns:
+      - name: product_id
+        description: "{{ doc('product_id') }}"
+        tests: [not_null, unique]
+      - name: total_revenue_gbp
+        description: "{{ doc('total_revenue_gbp') }}"
+      - name: total_units_sold
+        description: "{{ doc('total_units_sold') }}"
+      - name: gross_margin_gbp
+        description: "{{ doc('gross_margin_gbp') }}"
+      - name: gross_margin_pct
+        description: "{{ doc('gross_margin_pct') }}"
+      - name: avg_selling_price_gbp
+        description: "{{ doc('avg_selling_price_gbp') }}"

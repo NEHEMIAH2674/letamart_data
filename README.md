@@ -11,28 +11,19 @@
 ## Table of Contents
 
 1. [Problem Statement](#1-problem-statement)
-2. [Solution Architecture](#2-solution-architecture)
-3. [Project Structure](#3-project-structure)
-4. [Setup Guide](#4-setup-guide)
-   - [4.1 Prerequisites](#41-prerequisites)
-   - [4.2 GCP Configuration](#42-gcp-configuration)
-   - [4.3 Python Environment](#43-python-environment)
-   - [4.4 dbt Setup](#44-dbt-setup)
-   - [4.5 BigQuery Connection](#45-bigquery-connection)
-5. [Data Generation](#5-data-generation)
-6. [dbt Layers](#6-dbt-layers)
-   - [6.1 Sources](#61-sources)
-   - [6.2 Staging](#62-staging)
-   - [6.3 Intermediate](#63-intermediate)
-   - [6.4 Analytics — Facts](#64-analytics--facts)
-   - [6.5 Analytics — Dimensions](#65-analytics--dimensions)
-   - [6.6 Analytics — Reporting](#66-analytics--reporting)
-7. [Custom Macros](#7-custom-macros)
-8. [Testing Strategy](#8-testing-strategy)
-9. [Documentation](#9-documentation)
-10. [Scheduling & Orchestration](#10-scheduling--orchestration)
-11. [Slack Alerts](#11-slack-alerts)
-12. [Key Design Decisions](#12-key-design-decisions)
+2. [Strategy Flowchart](#2-strategy-flowchart)
+3. [Solution Architecture](#3-solution-architecture)
+4. [Project Structure](#4-project-structure)
+5. [Setup Guide](#5-setup-guide)
+6. [Data Generation](#6-data-generation)
+7. [dbt Layers](#7-dbt-layers)
+8. [Custom Macros](#8-custom-macros)
+9. [Testing Strategy](#9-testing-strategy)
+10. [Documentation](#10-documentation)
+11. [BigQuery — Live Datasets](#11-bigquery--live-datasets)
+12. [Scheduling & Orchestration](#12-scheduling--orchestration)
+13. [Slack Alerts](#13-slack-alerts)
+14. [Key Design Decisions](#14-key-design-decisions)
 
 ---
 
@@ -51,7 +42,81 @@ A fully automated dbt pipeline that transforms raw data into clean, tested, docu
 
 ---
 
-## 2. Solution Architecture
+## 2. Strategy Flowchart
+
+```mermaid
+flowchart TD
+    A([🏪 Business Problem\nRaw data · no logic · no quality · no schedule]):::problem
+
+    subgraph INGEST["📥 Ingest"]
+        B[generate_raw_data.py\nRuns daily at 12:00 UTC]:::script
+        C[(BigQuery\nletamart_raw\n6 tables · ~23k rows)]:::bq
+    end
+
+    subgraph TRANSFORM["⚙️ Transform — dbt pipeline"]
+        D[Staging\nstg_* · cast & rename · views\n6 models · 58 tests]:::staging
+        E[Intermediate\nint_* · joins & metrics · ephemeral\n3 models · 9 tests]:::intermediate
+        subgraph ANALYTICS["Analytics layer"]
+            F[Facts\nfact_orders · fact_order_items\nincremental · partitioned]:::facts
+            G[Dimensions\ndim_customers · dim_products · dim_date\nSCD Type 1]:::dims
+            H[Reporting\nreporting_daily_sales\nreporting_inventory_alerts · reporting_customer_ltv]:::reporting
+        end
+    end
+
+    subgraph VALIDATE["✅ Validate"]
+        I[dbt test\n127 tests passing\nunique · not_null · relationships]:::test
+    end
+
+    subgraph SCHEDULE["⏰ Schedule — GitHub Actions"]
+        J[Hourly run\ndbt_hourly.yml · incremental facts]:::hourly
+        K[Daily full run\ndbt_daily.yml · 12:00 UTC]:::daily
+        L[CI on every PR\ndbt_ci.yml · compile + tests]:::ci
+    end
+
+    subgraph ALERT["🔔 Alerts"]
+        M[Slack\nRun summary · Inventory alerts · Failure pings]:::slack
+    end
+
+    subgraph CONSUME["📊 Consume"]
+        N[Looker Studio\nCEO · Commercial · Operations]:::bi
+        O[dbt docs\nLineage graph · Column docs]:::docs
+    end
+
+    P([✅ Business Outcome\nTrusted data · fast decisions · zero manual SQL]):::outcome
+
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    E --> F & G & H
+    F & G & H --> I
+    I --> J & K & L
+    J & K --> M
+    K --> N & O
+    M --> N
+    N & O --> P
+
+    classDef problem      fill:#F1EFE8,stroke:#B4B2A9,color:#2C2C2A
+    classDef script       fill:#E1F5EE,stroke:#5DCAA5,color:#04342C
+    classDef bq           fill:#E6F1FB,stroke:#85B7EB,color:#042C53
+    classDef staging      fill:#E1F5EE,stroke:#5DCAA5,color:#04342C
+    classDef intermediate fill:#EEEDFE,stroke:#AFA9EC,color:#26215C
+    classDef facts        fill:#FAECE7,stroke:#F0997B,color:#4A1B0C
+    classDef dims         fill:#FAECE7,stroke:#F0997B,color:#4A1B0C
+    classDef reporting    fill:#FAECE7,stroke:#F0997B,color:#4A1B0C
+    classDef test         fill:#E6F1FB,stroke:#85B7EB,color:#042C53
+    classDef hourly       fill:#FAEEDA,stroke:#FAC775,color:#412402
+    classDef daily        fill:#FAEEDA,stroke:#FAC775,color:#412402
+    classDef ci           fill:#FAEEDA,stroke:#FAC775,color:#412402
+    classDef slack        fill:#F1EFE8,stroke:#B4B2A9,color:#2C2C2A
+    classDef bi           fill:#E1F5EE,stroke:#5DCAA5,color:#04342C
+    classDef docs         fill:#E1F5EE,stroke:#5DCAA5,color:#04342C
+    classDef outcome      fill:#E1F5EE,stroke:#1D9E75,color:#04342C
+```
+
+---
+
+## 3. Solution Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -82,17 +147,17 @@ A fully automated dbt pipeline that transforms raw data into clean, tested, docu
 │                    └─────────┬──────────────────┘                   │
 │                              │                                       │
 │                    ┌─────────▼──────────────────┐                   │
-│                    │   Looker / Metabase / BI    │                   │
+│                    │   Looker Studio / BI        │                   │
 │                    │   Slack inventory alerts    │                   │
 │                    └────────────────────────────┘                   │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Lineage Graph (dbt docs)
+### dbt Lineage Graph
 
 > Run `dbt docs generate && dbt docs serve` to view the interactive lineage graph at http://localhost:8080
 
-![Lineage Graph](docs/lineage_graph.png)
+![dbt lineage graph](docs/lineage_graph.png)
 
 ### Layer Responsibilities
 
@@ -106,7 +171,7 @@ A fully automated dbt pipeline that transforms raw data into clean, tested, docu
 
 ---
 
-## 3. Project Structure
+## 4. Project Structure
 
 ```
 letamart_dbt/
@@ -171,9 +236,9 @@ letamart_dbt/
 
 ---
 
-## 4. Setup Guide
+## 5. Setup Guide
 
-### 4.1 Prerequisites
+### 5.1 Prerequisites
 
 - Python 3.11+
 - Google Cloud SDK (`gcloud`)
@@ -181,7 +246,7 @@ letamart_dbt/
 - A personal GCP project with BigQuery enabled
 - A Slack workspace with incoming webhooks enabled
 
-### 4.2 GCP Configuration
+### 5.2 GCP Configuration
 
 This project uses a **separate gcloud configuration** to isolate the personal GCP account from any existing org accounts on the same machine.
 
@@ -216,10 +281,9 @@ letamart   True       your@gmail.com             your-project-id
 work       False      work@organization.com      org-project-id
 ```
 
-> **Why a separate configuration?**
-> Running `gcloud config configurations activate work` switches back to your org account instantly. The two projects never interfere with each other.
+> **Why a separate configuration?** Running `gcloud config configurations activate work` switches back to your org account instantly. The two projects never interfere with each other.
 
-### 4.3 Python Environment
+### 5.3 Python Environment
 
 ```bash
 # Clone the repo
@@ -227,7 +291,6 @@ git clone https://github.com/NEHEMIAH2674/letamart_data.git
 cd letamart_data
 
 # Create virtual environment at the parent level
-# (covers both dbt project and any future API/scripts subfolder)
 python -m venv venv
 source venv/Scripts/activate   # Windows Git Bash
 # source venv/bin/activate      # macOS/Linux
@@ -237,7 +300,7 @@ cd letamart_dbt
 pip install -r requirements.txt
 ```
 
-### 4.4 dbt Setup
+### 5.4 dbt Setup
 
 ```bash
 # Install dbt packages (dbt_utils)
@@ -255,7 +318,7 @@ Connection test: [OK connection ok]
 All checks passed!
 ```
 
-### 4.5 BigQuery Connection
+### 5.5 BigQuery Connection
 
 The `profiles.yml` in the repo root contains two targets:
 
@@ -270,7 +333,6 @@ letamart_dbt:
       dataset: letamart_dev
       location: EU
       threads: 4
-
     prod:
       type: bigquery
       method: oauth
@@ -284,7 +346,7 @@ letamart_dbt:
 
 ---
 
-## 5. Data Generation
+## 6. Data Generation
 
 The project includes a Python script that generates realistic supermarket data and loads it into BigQuery. This makes the project fully self-contained — no external data sources required.
 
@@ -314,28 +376,17 @@ The script sends a Slack alert on completion with row counts and elapsed time.
 
 ---
 
-## 6. dbt Layers
+## 7. dbt Layers
 
-### 6.1 Sources
+### 7.1 Sources
 
-Defined in `models/staging/letamart_raw/src_letamart.yml`.
+Defined in `models/staging/letamart_raw/src_letamart.yml`. Sources tell dbt where to find raw data in BigQuery and define database and schema (`npd-01.letamart_raw`), data freshness thresholds (warn after 25h, error after 48h), and column-level tests on the raw tables.
 
-Sources tell dbt where to find raw data in BigQuery and define:
-- Database and schema (`npd-01.letamart_raw`)
-- Data freshness thresholds (warn after 25h, error after 48h)
-- Column-level tests on the raw tables
-
-### 6.2 Staging
+### 7.2 Staging
 
 **Materialisation:** view | **Models:** 6 | **Tests:** 58
 
-Staging models are the first transformation layer. They follow strict rules:
-- One model per source table
-- Cast all columns to correct types
-- Rename columns to consistent conventions
-- Add light derived columns (e.g. `line_total_gbp`, `is_substituted`)
-- Add `refreshed_at` audit column
-- **No joins, no business logic**
+Staging models are the first transformation layer. They follow strict rules — one model per source table, cast all columns to correct types, rename to consistent conventions, add light derived columns (e.g. `line_total_gbp`, `is_substituted`), add `refreshed_at` audit column. No joins, no business logic.
 
 ```sql
 -- Example: stg_orders.sql
@@ -345,23 +396,23 @@ with source as (
 
 orders as (
     select
-        cast(order_id   as string)    as order_id,
-        cast(customer_id as string)   as customer_id,
-        lower(trim(status))           as order_status,
-        lower(trim(channel))          as order_channel,
-        cast(created_at as timestamp) as order_created_at,
-        cast(_loaded_at as timestamp) as refreshed_at
+        cast(order_id    as string)    as order_id,
+        cast(customer_id as string)    as customer_id,
+        lower(trim(status))            as order_status,
+        lower(trim(channel))           as order_channel,
+        cast(created_at  as timestamp) as order_created_at,
+        cast(_loaded_at  as timestamp) as refreshed_at
     from source
 )
 
 select * from orders
 ```
 
-### 6.3 Intermediate
+### 7.3 Intermediate
 
 **Materialisation:** ephemeral | **Models:** 3 | **Tests:** 9
 
-Intermediate models contain all business logic. They are ephemeral — no BigQuery tables are created. The SQL is compiled inline by downstream models, saving storage cost.
+Intermediate models contain all business logic. They are ephemeral — no BigQuery tables are created. SQL is compiled inline by downstream models, saving storage cost.
 
 | Model | What it does |
 |---|---|
@@ -371,7 +422,7 @@ Intermediate models contain all business logic. They are ephemeral — no BigQue
 
 **Naming convention:** `int_{entity}__{transformation}` — double underscore separates entity from transformation verb.
 
-### 6.4 Analytics — Facts
+### 7.4 Analytics — Facts
 
 **Materialisation:** incremental (merge) | **Partition:** `order_date` | **Cluster:** `order_status`, `order_channel`
 
@@ -388,7 +439,7 @@ Fact tables use an incremental merge strategy — only the last 3 days are proce
 | `fact_orders` | ~3,000 | One row per order |
 | `fact_order_items` | ~19,000 | One row per order line |
 
-### 6.5 Analytics — Dimensions
+### 7.5 Analytics — Dimensions
 
 **Materialisation:** table (SCD Type 1 — full refresh daily)
 
@@ -398,11 +449,9 @@ Fact tables use an incremental merge strategy — only the last 3 days are proce
 | `dim_products` | 100 | Product catalogue with gross margin %, performance tier (`hero`, `core`, `tail`) and inventory status |
 | `dim_date` | 2,000+ | Date spine from 2023 to 2 years ahead with week/month/quarter labels |
 
-### 6.6 Analytics — Reporting
+### 7.6 Analytics — Reporting
 
 **Materialisation:** table (full refresh daily)
-
-Pre-aggregated tables built specifically for BI tools and Slack alerts.
 
 | Model | Description |
 |---|---|
@@ -412,7 +461,7 @@ Pre-aggregated tables built specifically for BI tools and Slack alerts.
 
 ---
 
-## 7. Custom Macros
+## 8. Custom Macros
 
 Located in `macros/`. See `macros/README.md` for full documentation.
 
@@ -428,7 +477,7 @@ Located in `macros/`. See `macros/README.md` for full documentation.
 
 ---
 
-## 8. Testing Strategy
+## 9. Testing Strategy
 
 Tests are defined in YAML files alongside each model. dbt runs them with `dbt test`.
 
@@ -449,54 +498,63 @@ Tests are defined in YAML files alongside each model. dbt runs them with `dbt te
 | **Total** | **23** | **127** |
 
 ```bash
-# Run all tests
-dbt test
-
-# Run tests for a specific layer
-dbt test --select staging
-dbt test --select intermediate
-dbt test --select analytics
+dbt test                          # run all tests
+dbt test --select staging         # staging only
+dbt test --select intermediate    # intermediate only
+dbt test --select analytics       # analytics only
 ```
 
 ---
 
-## 9. Documentation
+## 10. Documentation
 
 dbt generates an interactive documentation site from the descriptions and tests defined in YAML files.
 
 ```bash
-# Generate the catalog
-dbt docs generate
-
-# Serve locally at http://localhost:8080
-dbt docs serve
+dbt docs generate    # generate the catalog
+dbt docs serve       # serve locally at http://localhost:8080
 ```
-
-**What you'll see:**
-- **Lineage graph** — full DAG from sources to reporting models
-- **Model pages** — description, columns, tests, SQL code
-- **Source pages** — freshness status, raw table schema
-- **Macro pages** — usage and description
 
 Every model, column and source in this project has a written description. Column descriptions are defined once in `column_docs/` markdown files and referenced across multiple models using `{{ doc('column_name') }}`.
 
 ---
 
-## 10. Scheduling & Orchestration
+## 11. BigQuery — Live Datasets
+
+All datasets live in GCP project `npd-01`. The pipeline creates and maintains 4 datasets automatically.
+
+### Raw layer — `letamart_raw`
+> 6 source tables generated daily by `generate_raw_data.py`
+
+![letamart_raw dataset](docs/bigquery_raw.png)
+
+### Staging layer — `letamart_prod_staging`
+> 6 views materialised by dbt — light cleaning and casting only
+
+![letamart_prod_staging dataset](docs/bigquery_prod_staging.png)
+
+### Analytics layer — `letamart_prod_analytics`
+> 8 tables materialised by dbt — facts, dimensions and reporting
+
+![letamart_prod_analytics dataset](docs/bigquery_prod_analytics.png)
+
+---
+
+## 12. Scheduling & Orchestration
 
 Three GitHub Actions workflows automate the full pipeline:
 
 ### dbt CI (`dbt_ci.yml`) — triggered on every PR to main
 1. Authenticate to GCP via Workload Identity Federation
 2. Install dbt + packages
-3. Compile all SQL (catches syntax errors before they reach BigQuery)
+3. Compile all SQL — catches syntax errors before they reach BigQuery
 4. Run source freshness tests
 5. Post pass/fail comment on the PR
 
 ### Hourly run (`dbt_hourly.yml`) — every hour at :00
 1. Authenticate to GCP
 2. Check source freshness
-3. Run `tag:incremental` models only (fact tables — last 3 days)
+3. Run `tag:incremental` models only — fact tables, last 3 days
 4. Test incremental models
 5. Send Slack alert with pass/fail summary
 
@@ -505,8 +563,8 @@ Three GitHub Actions workflows automate the full pipeline:
 2. Check source freshness
 3. Run all models in dependency order
 4. Run all 127 tests
-5. Generate dbt docs (uploaded as GitHub Actions artifact)
-6. Send inventory Slack alert (out-of-stock and critical products)
+5. Generate dbt docs — uploaded as GitHub Actions artifact
+6. Send inventory Slack alert — out-of-stock and critical products
 7. Send run summary Slack alert
 8. On failure: send critical failure alert with link to failed run
 
@@ -523,17 +581,20 @@ Three GitHub Actions workflows automate the full pipeline:
 
 ---
 
-## 11. Slack Alerts
+## 13. Slack Alerts
 
-Two alert types are sent to Slack:
+Slack alerts fire automatically after every hourly and daily run.
 
 ### Run summary alert
-Sent after every hourly and daily run. Shows pass/fail counts, elapsed time and failed model names.
+Sent after every hourly and daily run — shows pass/fail counts, elapsed time and failed model names.
+
+![Slack alerts firing hourly](docs/slack_alerts.png)
 
 ```
-✅ letamart_dbt — daily run Passed
-Models run: 17 | Passed: 17 | Errors: 0
-Elapsed: 45s | 2026-05-31 12:00 UTC
+✅ letamart_dbt — hourly run ✅ Passed
+Models run: 12  |  Passed: 12  |  Errors: 0
+Elapsed: 5.5s   |  2026-05-31 16:01 UTC
+Project: npd-01  |  Dataset: letamart_raw
 ```
 
 ### Inventory alert
@@ -548,7 +609,7 @@ Sent daily with products below reorder point, prioritised by severity:
 
 ---
 
-## 12. Key Design Decisions
+## 14. Key Design Decisions
 
 | Decision | Reason |
 |---|---|
@@ -561,4 +622,4 @@ Sent daily with products below reorder point, prioritised by severity:
 | **Workload Identity Federation** | Keyless GCP auth from GitHub Actions — no secrets rotation needed |
 | **`ON` joins over `USING`** | Explicit join conditions are unambiguous and easier to debug |
 | **Column docs in separate `.md` files** | Write once, reference everywhere — single source of truth for column descriptions |
-| **`refreshed_at` audit column** | Every staging model tracks when data was last loaded — enables data freshness monitoring |
+| **`refreshed_at` audit column** | Every staging model tracks when data was last loaded — enables freshness monitoring |

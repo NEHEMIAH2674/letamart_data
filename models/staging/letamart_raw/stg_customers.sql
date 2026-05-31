@@ -10,9 +10,9 @@ customers as (
     select
         cast(customer_id as string) as customer_id,
         cast(date_of_birth as date) as date_of_birth,
-        cast(registered_at as timestamp) as registered_at,
         cast(is_active as bool) as is_active,
         cast(_loaded_at as timestamp) as refreshed_at,
+        timestamp(datetime(cast(registered_at as timestamp), 'UTC')) as registered_at,
         lower(trim(email)) as email,
         initcap(trim(first_name)) as first_name,
         initcap(trim(last_name)) as last_name,
@@ -24,7 +24,7 @@ customers as (
         -- audit
         date_diff(
             current_date(),
-            cast(registered_at as date),
+            date(registered_at),
             day
         ) as days_since_registration
 

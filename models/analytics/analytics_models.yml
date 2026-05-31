@@ -1,0 +1,126 @@
+version: 2
+
+models:
+  - name: fact_orders
+    description: "{{ doc('fact_orders') }}"
+    columns:
+      - name: surrogate_key
+        description: "{{ doc('surrogate_key') }}"
+        tests: [unique, not_null]
+      - name: order_id
+        description: "{{ doc('order_id') }}"
+        tests: [unique, not_null]
+      - name: customer_id
+        description: "{{ doc('customer_id') }}"
+        tests: [not_null]
+      - name: order_date
+        description: "{{ doc('order_date') }}"
+        tests: [not_null]
+      - name: basket_value_gbp
+        description: "{{ doc('basket_value_gbp') }}"
+      - name: is_delivered
+        description: "{{ doc('is_delivered') }}"
+      - name: dbt_updated_at
+        description: "{{ doc('dbt_updated_at') }}"
+
+  - name: fact_order_items
+    description: "{{ doc('fact_order_items') }}"
+    columns:
+      - name: surrogate_key
+        description: "{{ doc('surrogate_key') }}"
+        tests: [unique, not_null]
+      - name: order_item_id
+        tests: [unique, not_null]
+      - name: order_id
+        description: "{{ doc('order_id') }}"
+        tests: [not_null]
+      - name: product_id
+        description: "{{ doc('product_id') }}"
+        tests: [not_null]
+      - name: dbt_updated_at
+        description: "{{ doc('dbt_updated_at') }}"
+
+  - name: dim_customers
+    description: "{{ doc('dim_customers') }}"
+    columns:
+      - name: customer_key
+        description: "{{ doc('customer_key') }}"
+        tests: [unique, not_null]
+      - name: customer_id
+        description: "{{ doc('customer_id') }}"
+        tests: [unique, not_null]
+      - name: customer_segment
+        description: "{{ doc('customer_segment') }}"
+        tests:
+          - accepted_values:
+              name: accepted_values_customer_segment
+              values: ["active","at_risk","lapsing","churned","never_ordered"]
+      - name: value_band
+        description: "{{ doc('value_band') }}"
+        tests:
+          - accepted_values:
+              name: accepted_values_value_band
+              values: ["high","mid","low","none"]
+      - name: dbt_updated_at
+        description: "{{ doc('dbt_updated_at') }}"
+
+  - name: dim_products
+    description: "{{ doc('dim_products') }}"
+    columns:
+      - name: product_key
+        description: "{{ doc('product_key') }}"
+        tests: [unique, not_null]
+      - name: product_id
+        description: "{{ doc('product_id') }}"
+        tests: [unique, not_null]
+      - name: product_tier
+        description: "{{ doc('product_tier') }}"
+        tests:
+          - accepted_values:
+              name: accepted_values_product_tier
+              values: ["hero","core","tail","no_sales"]
+      - name: dbt_updated_at
+        description: "{{ doc('dbt_updated_at') }}"
+
+  - name: dim_date
+    description: "{{ doc('dim_date') }}"
+    columns:
+      - name: date_id
+        tests: [unique, not_null]
+      - name: full_date
+        tests: [unique, not_null]
+
+  - name: reporting_daily_sales
+    description: "{{ doc('reporting_daily_sales') }}"
+    columns:
+      - name: order_date
+        tests: [not_null]
+      - name: gross_revenue_gbp
+        description: "{{ doc('gross_revenue_gbp') }}"
+      - name: net_revenue_gbp
+        description: "{{ doc('net_revenue_gbp') }}"
+      - name: promo_attach_rate
+        description: "{{ doc('promo_attach_rate') }}"
+      - name: revenue_wow_pct_change
+        description: "{{ doc('revenue_wow_pct_change') }}"
+
+  - name: reporting_inventory_alerts
+    description: "{{ doc('reporting_inventory_alerts') }}"
+    columns:
+      - name: stock_status
+        description: "{{ doc('stock_status') }}"
+        tests:
+          - accepted_values:
+              name: accepted_values_stock_status
+              values: ["out_of_stock","critical","low_stock"]
+
+  - name: reporting_customer_ltv
+    description: "{{ doc('reporting_customer_ltv') }}"
+    columns:
+      - name: cohort_month
+        description: "{{ doc('cohort_month') }}"
+        tests: [not_null]
+      - name: pct_active_30d
+        description: "{{ doc('pct_active_30d') }}"
+      - name: pct_active_90d
+        description: "{{ doc('pct_active_90d') }}"

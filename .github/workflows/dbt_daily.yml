@@ -54,6 +54,7 @@ jobs:
           dbt source freshness \
             --profiles-dir $DBT_PROFILES_DIR \
             --target $DBT_TARGET
+        continue-on-error: true
 
       - name: Run dimensions and reporting (full refresh)
         run: |

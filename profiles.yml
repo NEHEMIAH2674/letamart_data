@@ -1,0 +1,24 @@
+letamart_dbt:
+  target: "{{ env_var('DBT_TARGET', 'dev') }}"
+  outputs:
+    dev:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('GCP_PROJECT_ID', 'npd-01') }}"
+      dataset: letamart_dev
+      location: "{{ env_var('GCP_LOCATION', 'EU') }}"
+      threads: 4
+      priority: interactive
+      job_execution_timeout_seconds: 300
+      job_retries: 1
+
+    prod:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('GCP_PROJECT_ID', 'npd-01') }}"
+      dataset: letamart_prod
+      location: "{{ env_var('GCP_LOCATION', 'EU') }}"
+      threads: 8
+      priority: batch
+      job_execution_timeout_seconds: 600
+      job_retries: 1

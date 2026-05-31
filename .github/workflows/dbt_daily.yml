@@ -56,20 +56,13 @@ jobs:
             --target $DBT_TARGET
         continue-on-error: true
 
-      - name: Run dimensions and reporting (full refresh)
+      - name: Run all models (full refresh)
         run: |
           dbt run \
             --profiles-dir $DBT_PROFILES_DIR \
             --target $DBT_TARGET \
-            --select tag:dimensions tag:reporting \
             --full-refresh
 
-      - name: Run incremental facts
-        run: |
-          dbt run \
-            --profiles-dir $DBT_PROFILES_DIR \
-            --target $DBT_TARGET \
-            --select tag:incremental
 
       - name: Run all tests
         run: |

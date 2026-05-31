@@ -90,7 +90,7 @@ joined as (
 
     from products as p
     left join product_sales as s on p.product_id = s.product_id
-    left join inventory as inv on products.product_id = inv.product_id
+    left join inventory as inv on p.product_id = inv.product_id
 )
 
 select * from joined

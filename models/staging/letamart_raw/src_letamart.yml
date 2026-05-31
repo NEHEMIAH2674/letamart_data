@@ -5,10 +5,11 @@ sources:
     database: npd-01
     schema: letamart_raw
     description: "Raw supermarket data generated and loaded daily"
-    freshness:
-      warn_after: {count: 25, period: hour}
-      error_after: {count: 48, period: hour}
-    loaded_at_field: _loaded_at
+    config:
+      freshness:
+        warn_after: {count: 25, period: hour}
+        error_after: {count: 48, period: hour}
+      loaded_at_field: _loaded_at
 
     tables:
       - name: orders

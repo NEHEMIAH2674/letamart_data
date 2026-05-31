@@ -9,11 +9,11 @@ sources:
       freshness:
         warn_after: {count: 25, period: hour}
         error_after: {count: 48, period: hour}
-      loaded_at_field: _loaded_at
 
     tables:
       - name: orders
         description: "One row per customer order"
+        loaded_at_field: _loaded_at
         columns:
           - name: order_id
             tests: [unique, not_null]
@@ -52,6 +52,7 @@ sources:
 
       - name: customers
         description: "Customer master"
+        loaded_at_field: _loaded_at
         columns:
           - name: customer_id
             tests: [unique, not_null]
@@ -64,6 +65,7 @@ sources:
 
       - name: inventory
         description: "Daily stock snapshot per product per warehouse"
+        loaded_at_field: _loaded_at
         columns:
           - name: inventory_id
             tests: [unique, not_null]

@@ -1,0 +1,134 @@
+# .github/workflows/dbt_daily.yml
+# Runs at 12:00 UTC daily — full refresh of all models + docs + Slack alerts.
+
+name: dbt — daily full run
+
+on:
+  schedule:
+    - cron: "0 12 * * *"   # 12:00 UTC daily
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "dbt target (dev / prod)"
+        required: false
+        default: prod
+
+env:
+  DBT_PROFILES_DIR: ${{ github.workspace }}
+  DBT_TARGET: ${{ github.event.inputs.target || 'prod' }}
+
+jobs:
+  dbt-daily:
+    name: Daily full run
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install dbt packages
+        run: dbt deps --profiles-dir $DBT_PROFILES_DIR
+
+      - name: Check source freshness
+        run: |
+          dbt source freshness \
+            --profiles-dir $DBT_PROFILES_DIR \
+            --target $DBT_TARGET
+
+      - name: Run dimensions and reporting (full refresh)
+        run: |
+          dbt run \
+            --profiles-dir $DBT_PROFILES_DIR \
+            --target $DBT_TARGET \
+            --select tag:dimensions tag:reporting \
+            --full-refresh
+
+      - name: Run incremental facts
+        run: |
+          dbt run \
+            --profiles-dir $DBT_PROFILES_DIR \
+            --target $DBT_TARGET \
+            --select tag:incremental
+
+      - name: Run all tests
+        run: |
+          dbt test \
+            --profiles-dir $DBT_PROFILES_DIR \
+            --target $DBT_TARGET
+
+      - name: Generate dbt docs
+        run: |
+          dbt docs generate \
+            --profiles-dir $DBT_PROFILES_DIR \
+            --target $DBT_TARGET
+        continue-on-error: true
+
+      - name: Upload dbt docs
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-docs-${{ github.run_id }}
+          path: target/
+          retention-days: 7
+
+      - name: Send inventory Slack alert
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_DATASET_ID: ${{ secrets.GCP_DATASET_ID }}
+          GCP_LOCATION: ${{ secrets.GCP_LOCATION }}
+        run: python scripts/slack_alert.py --run-type daily --alert-type inventory
+        continue-on-error: true
+
+      - name: Send run summary Slack alert
+        if: always()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_DATASET_ID: ${{ secrets.GCP_DATASET_ID }}
+          GCP_LOCATION: ${{ secrets.GCP_LOCATION }}
+        run: python scripts/slack_alert.py --run-type daily
+
+  notify-on-failure:
+    name: Critical failure alert
+    runs-on: ubuntu-latest
+    needs: dbt-daily
+    if: failure()
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Send critical failure alert
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          python -c "
+          import json, os, urllib.request
+          payload = {
+            'text': '🚨 *letamart_dbt daily run FAILED* — <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>'
+          }
+          req = urllib.request.Request(
+            os.environ['SLACK_WEBHOOK_URL'],
+            data=json.dumps(payload).encode(),
+            headers={'Content-Type': 'application/json'}
+          )
+          urllib.request.urlopen(req)
+          "

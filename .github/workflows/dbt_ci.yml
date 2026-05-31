@@ -1,0 +1,91 @@
+# .github/workflows/dbt_ci.yml
+# Runs on every PR to main — compiles SQL and validates changed models.
+
+name: dbt — CI (PR check)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "models/**"
+      - "macros/**"
+      - "seeds/**"
+      - "dbt_project.yml"
+      - "packages.yml"
+
+env:
+  DBT_PROFILES_DIR: ${{ github.workspace }}
+
+jobs:
+  dbt-ci:
+    name: Compile and validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install dbt packages
+        run: dbt deps --profiles-dir $DBT_PROFILES_DIR
+
+      - name: dbt compile
+        run: dbt compile --profiles-dir $DBT_PROFILES_DIR --target dev
+
+      - name: dbt test sources
+        run: dbt test --profiles-dir $DBT_PROFILES_DIR --target dev --select source:*
+
+      - name: Comment PR with results
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let body = '### dbt CI results\n';
+            try {
+              const results = JSON.parse(
+                fs.readFileSync('target/run_results.json')
+              );
+              const r = results.results || [];
+              const pass = r.filter(
+                x => ['success','pass'].includes(x.status)
+              ).length;
+              const fail = r.filter(
+                x => ['error','fail'].includes(x.status)
+              ).length;
+              body += `✅ **${pass}** passed  🚨 **${fail}** failed  (${r.length} total)\n`;
+              if (fail > 0) {
+                const failNames = r
+                  .filter(x => ['error','fail'].includes(x.status))
+                  .map(x => x.unique_id.split('.').pop());
+                body += '\n**Failed:**\n```\n' + failNames.join('\n') + '\n```';
+              }
+            } catch (e) {
+              body += '⚠️ Could not read run results.';
+            }
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body
+            });

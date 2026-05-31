@@ -1,0 +1,74 @@
+# .github/workflows/dbt_hourly.yml
+# Runs every hour — refreshes incremental fact tables only.
+
+name: dbt — hourly incremental run
+
+on:
+  schedule:
+    - cron: "0 * * * *"   # every hour at :00
+  workflow_dispatch:
+
+env:
+  DBT_PROFILES_DIR: ${{ github.workspace }}
+
+jobs:
+  dbt-hourly:
+    name: Hourly incremental refresh
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install dbt packages
+        run: dbt deps --profiles-dir $DBT_PROFILES_DIR
+
+      - name: Check source freshness
+        run: |
+          dbt source freshness \
+            --profiles-dir $DBT_PROFILES_DIR \
+            --target prod
+        continue-on-error: true
+
+      - name: Run incremental fact models
+        run: |
+          dbt run \
+            --profiles-dir $DBT_PROFILES_DIR \
+            --target prod \
+            --select tag:incremental
+
+      - name: Test incremental models
+        run: |
+          dbt test \
+            --profiles-dir $DBT_PROFILES_DIR \
+            --target prod \
+            --select tag:incremental
+
+      - name: Send Slack alert
+        if: always()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_DATASET_ID: ${{ secrets.GCP_DATASET_ID }}
+          GCP_LOCATION: ${{ secrets.GCP_LOCATION }}
+        run: python scripts/slack_alert.py --run-type hourly

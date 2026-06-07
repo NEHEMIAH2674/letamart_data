@@ -70,6 +70,13 @@ jobs:
             --profiles-dir $DBT_PROFILES_DIR \
             --target $DBT_TARGET
 
+      - name: Run Great Expectations validations
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_LOCATION: ${{ secrets.GCP_LOCATION }}
+        run: python great_expectations/gx_validate.py
+        continue-on-error: true
+
       - name: Generate dbt docs
         run: |
           dbt docs generate \

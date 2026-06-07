@@ -311,7 +311,7 @@ def generate_customers() -> pd.DataFrame:
 
     rows  = []
     start = datetime(2020, 1, 1, tzinfo=timezone.utc)
-    end   = datetime(2026, 12, 31, tzinfo=timezone.utc)
+    end   = datetime.now(timezone.utc)
 
     for i in range(1, NUM_CUSTOMERS + 1):
         city, prefixes = random.choice(cities)
